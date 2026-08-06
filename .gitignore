@@ -1,0 +1,41 @@
+# Build products
+build/
+dist/
+DerivedData/
+*.xcarchive
+*.dmg
+*.dmg.sha256
+*.zip
+
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode package/state caches
+.swiftpm/
+Packages/
+Package.resolved
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Harness output
+masktest-out/
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Construct local tooling state — session transcripts, audit trails, and vector
+# caches. Machine-local and can contain full shell history; only context.md is
+# meant to be shared.
+.construct/*
+!.construct/context.md
