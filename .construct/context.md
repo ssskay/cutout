@@ -17,6 +17,10 @@ None
 
 ## Recent Decisions
 
+- commit `f6f295dbab` — Cutout 1.0.0 — local, offline background removal for macOS
+
 ## Architecture Notes
+
+_No new architecture notes._
 
 ## Open Questions

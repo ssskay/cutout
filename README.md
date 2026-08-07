@@ -93,6 +93,68 @@ cutout stage=write file=katie.jpg out=katie-id.jpg format=jpeg px=400x514 bytes=
 When a crop looks wrong, the log says whether it was the mask or the face box
 that lied.
 
+## Automation
+
+There is a `cutout` CLI built from the same `Cutout/Core/*.swift` the app uses,
+plus two hands-off surfaces on top of it. Install all of it with:
+
+```bash
+scripts/install-automation.sh              # eBay preset by default
+scripts/install-automation.sh --preset id  # or ID photos
+scripts/uninstall-automation.sh            # removes everything, keeps your images
+```
+
+**Watch folder.** Anything dropped in `~/Cutout/In` is processed into
+`~/Cutout/Out` and the original is filed under `~/Cutout/In/_processed`. AirDrop
+twenty photos from a shoot straight into it and walk away; a notification says
+how many landed. Runs as a LaunchAgent, starts at login, logs to
+`~/Library/Logs/Cutout/watch.log`.
+
+Files that fail go to `_failed` with a `.txt` next to them saying why, so the
+folder explains itself without anyone reading a daemon log.
+
+**Finder Quick Action.** Select images in Finder, right-click → Quick Actions →
+*Remove Background (Cutout)*. Output lands in `~/Cutout/Out`, which opens when
+it finishes.
+
+**Direct CLI.** Exits non-zero if anything failed, and `--json` emits one object
+per file for scripting:
+
+```bash
+cutout photo.jpg                              # eBay preset, ./cutout-out
+cutout *.jpg -p transparent -o ~/Desktop/cut
+cutout shot.heic -p id --json | jq .head_mm
+```
+
+### A note on the watch folder and half-arrived files
+
+Knowing a file *appeared* is easy; knowing it has finished arriving is the actual
+problem. AirDrop, Finder copies and Photos exports all create the file first and
+fill it in afterwards, so a naive watcher processes a truncated image.
+
+This matters more than it sounds. A truncated PNG still decodes — into the top
+third of the picture — and the pipeline will happily lift a subject out of it and
+write a clean, plausible, completely wrong export that slips into a listing
+unnoticed. Neither file size nor ImageIO catches it:
+`CGImageSourceGetStatusAtIndex` reports `.statusComplete` for a file cut off a
+third of the way through.
+
+So the watcher requires two things before touching a file: a size that has
+stopped changing, **and** a valid container end marker — PNG `IEND`, JPEG `EOI`,
+GIF trailer, or a complete ISO-BMFF box walk for HEIC. A transfer that stalls
+mid-copy is left alone and retried; one that never completes is filed to
+`_failed` after five minutes rather than sitting in the inbox forever.
+
+### CLI caveat
+
+The CLI is not sandboxed, and can't be — a sandboxed process can't read a watch
+folder it was never handed. Its offline guarantee is therefore *there is no
+network code in it* rather than the app's *the kernel will not permit it*. Still
+true, still auditable, just a weaker kind of true. The app keeps the hard
+guarantee.
+
+The CLI is built from source and is not shipped in the DMG.
+
 ## Requirements
 
 macOS 14 or later. `VNGenerateForegroundInstanceMaskRequest` needs it.
@@ -120,9 +182,9 @@ It compiles the exact same `Cutout/Core/*.swift` files the app uses, so there is
 no chance of testing a stale copy:
 
 ```bash
-scripts/masktest.sh photo.jpg -o out --dump-mask
-scripts/masktest.sh photo.jpg -o out --sweep      # erode/feather grid
-scripts/masktest.sh photo.jpg -o out -p id        # ID preset with head-height readout
+scripts/build-cli.sh photo.jpg -o out --dump-mask
+scripts/build-cli.sh photo.jpg -o out --sweep      # erode/feather grid
+scripts/build-cli.sh photo.jpg -o out -p id        # ID preset with head-height readout
 ```
 
 Cutting a release:

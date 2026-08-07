@@ -15,6 +15,89 @@ enum ImageFile {
         return type.conforms(to: .image)
     }
 
+    /// True when every byte of the image has arrived on disk.
+    ///
+    /// The folder watcher needs this and file *size* cannot answer it: a transfer
+    /// that stalls mid-copy looks exactly like one that finished. A truncated PNG
+    /// still decodes — into the top third of the picture — so the pipeline would
+    /// happily lift a subject out of it and write a clean, plausible, badly wrong
+    /// export.
+    ///
+    /// ImageIO cannot answer it either. `CGImageSourceGetStatusAtIndex` returns
+    /// `.statusComplete` for a file-backed source whether the file is whole or
+    /// cut off a third of the way through; the incremental API says the same. So
+    /// this checks the container's end marker directly, which is the only thing
+    /// on disk that actually distinguishes the two.
+    ///
+    /// Unknown containers return `true` rather than blocking forever on a format
+    /// we cannot verify — for those the size-stability window is the only gate.
+    static func isComplete(_ url: URL) -> Bool {
+        guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+              size > 16,
+              let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+
+        guard let head = try? handle.read(upToCount: 12), head.count >= 12 else { return false }
+
+        let tailLength = min(size, 64)
+        guard (try? handle.seek(toOffset: UInt64(size - tailLength))) != nil,
+              let tail = try? handle.readToEnd(), !tail.isEmpty else { return false }
+
+        // PNG: must end with the IEND chunk.
+        if head.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
+            return tail.range(of: Data("IEND".utf8)) != nil
+        }
+
+        // JPEG: must end with the EOI marker. Some encoders leave trailing
+        // padding, so search the tail rather than demanding the final two bytes.
+        if head.starts(with: [0xFF, 0xD8, 0xFF]) {
+            return tail.range(of: Data([0xFF, 0xD9])) != nil
+        }
+
+        // GIF: trailer byte.
+        if head.starts(with: Array("GIF8".utf8)) {
+            return tail.last == 0x3B
+        }
+
+        // ISO base media (HEIC, HEIF, AVIF) — what an iPhone actually produces.
+        // Top-level boxes tile the file exactly, so a walk that lands on the file
+        // size means nothing is missing.
+        if head.count >= 8, Array(head[4..<8]) == Array("ftyp".utf8) {
+            return isoBoxWalkReachesEnd(handle: handle, size: size)
+        }
+
+        return true
+    }
+
+    private static func isoBoxWalkReachesEnd(handle: FileHandle, size: Int) -> Bool {
+        var offset: UInt64 = 0
+        let total = UInt64(size)
+
+        while offset + 8 <= total {
+            guard (try? handle.seek(toOffset: offset)) != nil,
+                  let header = try? handle.read(upToCount: 8), header.count == 8 else { return false }
+
+            var boxSize = UInt64(header[0]) << 24 | UInt64(header[1]) << 16
+                        | UInt64(header[2]) << 8  | UInt64(header[3])
+
+            if boxSize == 1 {
+                // 64-bit extended size follows the 8-byte header.
+                guard let extended = try? handle.read(upToCount: 8), extended.count == 8 else { return false }
+                boxSize = extended.reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+                if boxSize < 16 { return false }
+            } else if boxSize == 0 {
+                // "extends to end of file" — by definition it reaches the end.
+                return true
+            } else if boxSize < 8 {
+                return false
+            }
+
+            offset += boxSize
+        }
+
+        return offset == total
+    }
+
     // MARK: - Load
 
     struct Loaded {
