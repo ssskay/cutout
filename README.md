@@ -202,3 +202,7 @@ shipped a build of another app that crashed on every button tap.
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Maintained by [Sara Kay](https://sarakay.me) · [@ssskay](https://github.com/ssskay) · [more projects](https://sarakay.me/projects.html)
