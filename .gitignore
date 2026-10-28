@@ -39,3 +39,6 @@ masktest-out/
 # meant to be shared.
 .construct/*
 !.construct/context.md
+
+# Local agent tooling state
+.construct/
